@@ -50,7 +50,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         <body>
             <div class="container">
                 <div class="form-container">
-                    <h1 class="mb-4 text-center">Upload Files</h1>
+                    <h1 class="mb-4 text-center">Payment Extractor</h1>
                     <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
                         <div class="input-group form-group mb-3">
                             <label for="file1">Upload Statement from Bank:</label>
