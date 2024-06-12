@@ -18,6 +18,11 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
         self.end_headers()
 
+    def _set_error_headers(self):
+        self.send_response(500)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+
     def do_GET(self):
         self._set_headers()
         self.wfile.write(b'''
@@ -51,7 +56,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             <div class="container">
                 <div class="form-container">
                     <h1 class="mb-4 text-center">Payment Extractor</h1>
-                    <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
+                    <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data" target="uploadFrame" class="needs-validation" novalidate>
                         <div class="input-group form-group mb-3">
                             <label for="file1">Upload Statement from Bank:</label>
                             <input type="file" class="form-control-file" id="file1" name="file1" required>
@@ -65,6 +70,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
                         </div>
                         <button type="submit" class="btn btn-primary btn-block">Upload and Process</button>
                     </form>
+                    <iframe id="uploadFrame" name="uploadFrame" style="display: none;" onload="clearForm()"></iframe>
                 </div>
             </div>
 
@@ -87,6 +93,9 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
                         });
                     }, false);
                 })();
+                function clearForm() {
+                    document.getElementById('uploadForm').reset();
+                }
             </script>
         </body>
         </html>
@@ -94,44 +103,66 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == '/upload':
-            ctype, pdict = cgi.parse_header(self.headers['content-type'])
-            if ctype == 'multipart/form-data':
-                form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={'REQUEST_METHOD': 'POST'})
-                file1 = form['file1'].file.read()
-                file2 = form['file2'].file.read()
+            try:
+                ctype, pdict = cgi.parse_header(self.headers['content-type'])
+                if ctype == 'multipart/form-data':
+                    form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={'REQUEST_METHOD': 'POST'})
+                    file1 = form['file1'].file.read()
+                    file2 = form['file2'].file.read()
 
-                df1 = pd.read_excel(BytesIO(file1))
-                df2 = pd.read_excel(BytesIO(file2))
+                    df1 = pd.read_excel(BytesIO(file1))
+                    df2 = pd.read_excel(BytesIO(file2))
 
-                # Transform data from TEST 2.xlsx
-                df1['mandate_number'] = df1['Reference'].str.split(':').str[-1].astype(str)
-                df1['date'] = pd.to_datetime(df1['Date'], dayfirst=True).dt.date
-                df1['Amount'] = df1['Amount'].round(2)
+                    # Transform data from TEST 2.xlsx
+                    df1['mandate_number'] = df1['Reference'].str.split(':').str[-1].astype(str)
+                    df1['date'] = pd.to_datetime(df1['Date'], dayfirst=True).dt.date
+                    df1['Amount'] = df1['Amount'].round(2)
 
-                # Prepare data from TEST 1.xlsx
-                df2['paymentdate'] = pd.to_datetime(df2['PaymentDate'], dayfirst=True).dt.date
-                df2['CreditedAmount'] = df2['CreditedAmount'].round(2)
-                df2['MandateRefID'] = df2['MandateRefID'].apply(lambda x: str(int(x)) if pd.notnull(x) else x)
+                    # Prepare data from TEST 1.xlsx
+                    df2['paymentdate'] = pd.to_datetime(df2['PaymentDate'], dayfirst=True).dt.date
+                    df2['CreditedAmount'] = df2['CreditedAmount'].round(2)
+                    df2['MandateRefID'] = df2['MandateRefID'].apply(lambda x: str(int(x)) if pd.notnull(x) else x)
 
-                def find_matching_row(row):
-                    matched_rows = df2[
-                        (df2['MandateRefID'].str.contains(row['mandate_number'], na=False)) &
-                        (df2['CreditedAmount'] == row['Amount']) &
-                        (df2['paymentdate'] >= row['date'] - timedelta(days=7)) &
-                        (df2['paymentdate'] <= row['date'] + timedelta(days=7))
-                    ]
-                    return matched_rows
+                    def find_matching_row(row):
+                        matched_rows = df2[
+                            (df2['MandateRefID'].str.contains(row['mandate_number'], na=False)) &
+                            (df2['CreditedAmount'] == row['Amount']) & (
+                            df2['paymentdate'] <= row['date'] + timedelta(days=7))
+                            ]
 
-                results = pd.concat(df1.apply(find_matching_row, axis=1).tolist())
+                        return matched_rows
 
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    results.to_excel(writer, sheet_name='Matching Results', index=False)
-                output.seek(0)
+                    # Apply function to each row in df1 and concatenate results
+                    results_list = []
+                    unmatched_list = []
 
-                self._set_download_headers("matching_results.xlsx")
-                self.wfile.write(output.read())
-                output.close()
+                    for _, row in df1.iterrows():
+                        matched_rows = find_matching_row(row)
+                        if not matched_rows.empty:
+                            results_list.append(matched_rows)
+                        else:
+                            unmatched_list.append(row)
+
+                    results = pd.concat(results_list, ignore_index=True) if results_list else pd.DataFrame()
+                    unmatched = pd.DataFrame(unmatched_list)
+
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        if not results.empty:
+                            results.to_excel(writer, sheet_name='Matching Results', index=False)
+                        if not unmatched.empty:
+                            unmatched.to_excel(writer, sheet_name='Unmatched Results', index=False)
+                    output.seek(0)
+
+                    self._set_download_headers("results.xlsx")
+                    self.wfile.write(output.read())
+                    output.close()
+                else:
+                    self._set_error_headers()
+                    self.wfile.write(b"Unsupported content type.")
+            except Exception as e:
+                self._set_error_headers()
+                self.wfile.write(f"An error occurred: {str(e)}".encode())
 
 def run(server_class=HTTPServer, handler_class=SimpleHTTPRequestHandler, port=8000):
     server_address = ('', port)
