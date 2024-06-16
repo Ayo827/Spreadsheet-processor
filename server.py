@@ -1,4 +1,3 @@
-import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import cgi
 import pandas as pd
@@ -18,88 +17,27 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
         self.end_headers()
 
-    def _set_error_headers(self):
+    def _set_error_headers(self, error_message=""):
         self.send_response(500)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
+        self.wfile.write(f"An error occurred: {error_message}".encode())
+
+    def _set_success_headers(self, success_message=""):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write(f"Success: {success_message}".encode())
 
     def do_GET(self):
         self._set_headers()
-        self.wfile.write(b'''
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>File Upload</title>
-            <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
-            <style>
-                body, html {
-                    height: 100%;
-                }
-                .container {
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    height: 100%;
-                }
-                .form-container {
-                    border: 1px solid #ced4da;
-                    border-radius: 0.25rem;
-                    padding: 2rem;
-                    background-color: #fff;
-                    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="form-container">
-                    <h1 class="mb-4 text-center">Payment Extractor</h1>
-                    <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data" target="uploadFrame" class="needs-validation" novalidate>
-                        <div class="input-group form-group mb-3">
-                            <label for="file1">Upload Statement from Bank:</label>
-                            <input type="file" class="form-control-file" id="file1" name="file1" required>
-                            <div class="invalid-feedback">Please upload the bank statement.</div>
-                        </div>
-                        <hr>
-                        <div class="input-group form- mb-3">
-                            <label for="file2">Upload Statement from Remita (Bookfinance):</label>
-                            <input type="file" class="form-control-file" id="file2" name="file2" required>
-                            <div class="invalid-feedback">Please upload the Remita statement.</div>
-                        </div>
-                        <button type="submit" class="btn btn-primary btn-block">Upload and Process</button>
-                    </form>
-                    <iframe id="uploadFrame" name="uploadFrame" style="display: none;" onload="clearForm()"></iframe>
-                </div>
-            </div>
-
-            <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-            <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.3/dist/umd/popper.min.js"></script>
-            <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
-            <script>
-                (function() {
-                    'use strict';
-                    window.addEventListener('load', function() {
-                        var forms = document.getElementsByClassName('needs-validation');
-                        var validation = Array.prototype.filter.call(forms, function(form) {
-                            form.addEventListener('submit', function(event) {
-                                if (form.checkValidity() === false) {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                }
-                                form.classList.add('was-validated');
-                            }, false);
-                        });
-                    }, false);
-                })();
-                function clearForm() {
-                    document.getElementById('uploadForm').reset();
-                }
-            </script>
-        </body>
-        </html>
-        ''')
+        try:
+            with open('index.html', 'rb') as file:
+                self.wfile.write(file.read())
+        except FileNotFoundError:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b"File not found.")
 
     def do_POST(self):
         if self.path == '/upload':
@@ -158,11 +96,13 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
                     self.wfile.write(output.read())
                     output.close()
                 else:
-                    self._set_error_headers()
-                    self.wfile.write(b"Unsupported content type.")
+                    self._set_error_headers("Unsupported content type.")
+            except pd.errors.EmptyDataError:
+                self._set_error_headers("Uploaded file is empty or not readable.")
+            except pd.errors.ParserError:
+                self._set_error_headers("Error parsing file. Ensure the file format is correct.")
             except Exception as e:
-                self._set_error_headers()
-                self.wfile.write(f"An error occurred: {str(e)}".encode())
+                self._set_error_headers(str(e))
 
 def run(server_class=HTTPServer, handler_class=SimpleHTTPRequestHandler, port=8000):
     server_address = ('', port)
