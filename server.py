@@ -52,20 +52,21 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
                     df2 = pd.read_excel(BytesIO(file2))
 
                     # Transform data from TEST 2.xlsx
-                    df1['mandate_number'] = df1['Reference'].str.split(':').str[-1].astype(str)
-                    df1['date'] = pd.to_datetime(df1['Date'], dayfirst=True).dt.date
-                    df1['Amount'] = df1['Amount'].round(2)
+                    df1['mandate_number'] = df1['MANDATE NUMBER'] # .str.split(':').str[-1].astype(str)
+                    # df1['date'] = pd.to_datetime(df1['Date'], dayfirst=True).dt.date
+                    # df1['Amount'] = df1['Amount'].round(2)
 
                     # Prepare data from TEST 1.xlsx
-                    df2['paymentdate'] = pd.to_datetime(df2['PaymentDate'], dayfirst=True).dt.date
-                    df2['CreditedAmount'] = df2['CreditedAmount'].round(2)
-                    df2['MandateRefID'] = df2['MandateRefID'].apply(lambda x: str(int(x)) if pd.notnull(x) else x)
+                   # df2['paymentdate'] = pd.to_datetime(df2['PaymentDate'], dayfirst=True).dt.date
+                   # df2['CreditedAmount'] = df2['CreditedAmount'].round(2)
+                    df2['MandateRefID'] = df2['MANDATENO'] #.apply(lambda x: str(int(x)) if pd.notnull(x) else x)
 
                     def find_matching_row(row):
                         matched_rows = df2[
-                            (df2['MandateRefID'].str.contains(row['mandate_number'], na=False)) &
-                            (df2['CreditedAmount'] == row['Amount']) & (
-                            df2['paymentdate'] <= row['date'] + timedelta(days=7))
+                            (df2['MandateRefID'].str.contains(row['mandate_number'], na=False)) 
+                            #  &
+                          #  (df2['CreditedAmount'] == row['Amount']) & (
+                           # df2['paymentdate'] <= row['date'] + timedelta(days=7))
                             ]
 
                         return matched_rows
