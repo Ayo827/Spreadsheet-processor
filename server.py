@@ -63,7 +63,8 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
                     def find_matching_row(row):
                         matched_rows = df2[
-                            (df2['MandateRefID'].str.contains(row['mandate_number'], na=False)) 
+                        (df2['MandateRefID'] == (row['mandate_number'])) 
+                           # (df2['MandateRefID'].str.contains(row['mandate_number'], na=False)) 
                             #  &
                           #  (df2['CreditedAmount'] == row['Amount']) & (
                            # df2['paymentdate'] <= row['date'] + timedelta(days=7))
